@@ -1,0 +1,369 @@
+{
+  "name": "Project 10- ICD-10 Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "icd10-assistant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "3e74b3d0-bc1f-4308-94bd-5b978b9c416b",
+      "name": "Webhook",
+      "webhookId": "cfa06774-8f0f-4d7d-b9f4-07d7bf23accd",
+      "retryOnFail": true,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1584,
+        16
+      ],
+      "id": "0c6b6509-f372-4f73-9544-3dc85ee8608b",
+      "name": "Respond to Webhook",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "27cc2fe0-0194-4a61-96fd-be28dacbda94",
+              "leftValue": "={{ $json.body.description }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        224,
+        0
+      ],
+      "id": "b09baaa5-14de-4902-8dd2-3f5f7348f248",
+      "name": "Check description"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"error\", \"message\": \"description is required\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        240,
+        144
+      ],
+      "id": "bdb16792-6978-4adb-852b-a657b4c7da23",
+      "name": "Respond Error"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://mbuexduiiivtdwqnkivi.supabase.co/rest/v1/rpc/search_icd10",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"q\": $json.text, \"lim\": 25 } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        752,
+        -16
+      ],
+      "id": "ddd8f55d-21da-48ef-b4dd-6d6d476ae38e",
+      "name": "Search ICD-10",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "dFcU2yUXhJZY0KSr",
+          "name": "Supabase lead-pipeline"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.description }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You convert a patient or clinician description into a short search phrase using official ICD-10-CM wording. Output only the phrase, 3 to 8 words, no punctuation, no code numbers, no explanation. Example: \"diabetic foot wound\" becomes \"type 2 diabetes mellitus with foot ulcer\"."
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        448,
+        -16
+      ],
+      "id": "f1af622a-54e4-4cf1-b815-e4e2b6c90ef1",
+      "name": "Rewrite to clinical terms",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3.5-lightning:free",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        448,
+        160
+      ],
+      "id": "cbb8b780-933f-49a1-a98a-67b10bca7046",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "ZKf2Gs4YnDNoGslM",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst candidates = items.map(i => `${i.json.code}: ${i.json.description}`).join('\\n');\nconst codes = items.map(i => i.json.code);\nconst description = $('Webhook').first().json.body.description;\nreturn [{ json: { description, candidates, codes } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        976,
+        -16
+      ],
+      "id": "4dc50535-1456-4f80-8a20-08a3e5d7176a",
+      "name": "Build candidates",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Description: {{ $json.description }}\n\nCandidate codes:\n{{ $json.candidates }}",
+        "messages": {
+          "messageValues": [
+            {
+              "message": "You are a medical coding assistant. From the candidate list only, choose up to 3 codes that best match the description, best first. Never use a code that is not in the list. If none fit, return an empty results array. Reply with JSON only, no other text, in this shape: {\"results\":[{\"code\":\"E11621\",\"reason\":\"short reason\"}]}"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1200,
+        0
+      ],
+      "id": "6d34b485-db46-4500-8ba8-7b65e126d604",
+      "name": "Pick best codes",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "model": "nvidia/nemotron-3.5-lightning:free",
+        "options": {
+          "temperature": 0.7
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        144
+      ],
+      "id": "9afe26e4-5d43-485a-a768-0a52d0e56e25",
+      "name": "OpenRouter Chat Model1",
+      "credentials": {
+        "openRouterApi": {
+          "id": "ZKf2Gs4YnDNoGslM",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.text || '';\nconst clean = raw.replace(/```json|```/g, '').trim();\nlet parsed = { results: [] };\ntry { parsed = JSON.parse(clean); } catch (e) {}\n\nconst lookup = {};\nfor (const i of $('Search ICD-10').all()) lookup[i.json.code] = i.json.description;\n\nconst dot = c => c.length > 3 ? c.slice(0, 3) + '.' + c.slice(3) : c;\n\nconst results = (parsed.results || [])\n  .filter(r => lookup[r.code])\n  .map(r => ({ code: dot(r.code), description: lookup[r.code], reason: r.reason }));\n\nconst input = $('Webhook').first().json.body.description;\nreturn [{ json: {\n  status: results.length ? 'ok' : 'no_match',\n  input,\n  results,\n  note: 'Suggested codes only. Verify against the full clinical documentation and a certified coder before billing.'\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1456,
+        208
+      ],
+      "id": "dd63284e-6939-49db-84df-a007da975864",
+      "name": "Validate and format",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check description": {
+      "main": [
+        [
+          {
+            "node": "Rewrite to clinical terms",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Search ICD-10": {
+      "main": [
+        [
+          {
+            "node": "Build candidates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Rewrite to clinical terms": {
+      "main": [
+        [
+          {
+            "node": "Search ICD-10",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Rewrite to clinical terms",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build candidates": {
+      "main": [
+        [
+          {
+            "node": "Pick best codes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick best codes": {
+      "main": [
+        [
+          {
+            "node": "Validate and format",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Pick best codes",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and format": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "747ecbd3-31f0-42ea-bf19-fb6dfce7cd50",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ecaeb7af10840ea42a47d10c1d65a9d06e8fb0626832f186215630309e76cb44"
+  },
+  "nodeGroups": [],
+  "id": "JoO43EJWzdrViHjO",
+  "tags": []
+}

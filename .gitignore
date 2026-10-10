@@ -1,0 +1,10 @@
+# Large public data files (download from CMS and run scripts/convert.py)
+icd10cm_codes_2027.txt
+icd10_codes.csv
+
+# Secrets
+.env
+
+# Misc
+*.log
+__pycache__/
